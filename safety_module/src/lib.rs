@@ -1,12 +1,12 @@
 #![no_std]
 #![allow(unused_attributes)]
 
-elrond_wasm::imports!();
-elrond_wasm::derive_imports!();
+multiversx_sc::imports!();
+multiversx_sc::derive_imports!();
 
 use common_structs::{DepositPosition, BP, SECONDS_PER_YEAR};
 
-#[elrond_wasm::contract]
+#[multiversx_sc::contract]
 pub trait SafetyModule {
     #[init]
     fn init(&self, wegld_token: TokenIdentifier, depositors_apy: BigUint) {
@@ -38,11 +38,7 @@ pub trait SafetyModule {
             .into_option()
             .unwrap_or_else(|| self.blockchain().get_caller());
 
-        // let round = self.blockchain().get_block_round();
-        // let deposit_metadata = DepositPosition::new(token, payment.clone(), account_position, round, BigUint::from(1u64));
-
         let nft_token = self.nft_token().get();
-        // let nft_nonce = self.mint_deposit_nft(&deposit_metadata, payment.clone());
 
         self.send()
             .direct_esdt(&caller_address, &nft_token, 0, &payment);

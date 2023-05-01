@@ -1,7 +1,7 @@
 #![no_std]
 
-elrond_wasm::imports!();
-elrond_wasm::derive_imports!();
+multiversx_sc::imports!();
+multiversx_sc::derive_imports!();
 
 pub mod factory;
 mod math;
@@ -13,10 +13,10 @@ pub mod utils;
 pub use common_structs::*;
 pub use common_tokens::*;
 
-use elrond_wasm::elrond_codec::Empty;
 use liquidity_pool::liquidity::ProxyTrait as _;
+use multiversx_sc::codec::Empty;
 
-#[elrond_wasm::contract]
+#[multiversx_sc::contract]
 pub trait LendingPool:
     factory::FactoryModule
     + router::RouterModule
@@ -27,7 +27,7 @@ pub trait LendingPool:
     + utils::LendingUtilsModule
     + math::LendingMathModule
     + price_aggregator_proxy::PriceAggregatorModule
-    + elrond_wasm_modules::default_issue_callbacks::DefaultIssueCallbacksModule
+    + multiversx_sc_modules::default_issue_callbacks::DefaultIssueCallbacksModule
 {
     #[init]
     fn init(&self, lp_template_address: ManagedAddress) {
@@ -41,7 +41,7 @@ pub trait LendingPool:
         let payment_amount = self.call_value().egld_value();
         self.account_token().issue_and_set_all_roles(
             EsdtTokenType::NonFungible,
-            payment_amount,
+            payment_amount.clone_value(),
             token_name,
             ticker,
             1,
@@ -98,11 +98,11 @@ pub trait LendingPool:
         let return_deposit_position = self
             .liquidity_pool_proxy(pool_address)
             .add_collateral(initial_or_new_deposit_position)
-            .add_esdt_token_transfer(
+            .with_esdt_transfer((
                 collateral_token_id.clone(),
                 collateral_nonce,
                 collateral_amount,
-            )
+            ))
             .execute_on_dest_context();
 
         self.deposit_positions(nft_account_nonce)
@@ -251,7 +251,7 @@ pub trait LendingPool:
                 let borrow_position: BorrowPosition<Self::Api> = self
                     .liquidity_pool_proxy(asset_address)
                     .repay(&initial_caller, bp)
-                    .add_esdt_token_transfer(repay_token_id.clone(), repay_nonce, repay_amount)
+                    .with_esdt_transfer((repay_token_id.clone(), repay_nonce, repay_amount))
                     .execute_on_dest_context();
 
                 // Update BorrowPosition
@@ -340,9 +340,10 @@ pub trait LendingPool:
 
         let asset_address = self.get_pool_address(&token_to_liquidate);
 
-        self.liquidity_pool_proxy(asset_address)
+        let _: IgnoreValue = self
+            .liquidity_pool_proxy(asset_address)
             .send_tokens(&initial_caller, &amount_to_send)
-            .execute_on_dest_context_ignore_result();
+            .execute_on_dest_context();
     }
 
     #[endpoint(updateCollateralWithInterest)]
@@ -351,9 +352,10 @@ pub trait LendingPool:
 
         for dp in deposit_positions.values() {
             let asset_address = self.get_pool_address(&dp.token_id);
-            self.liquidity_pool_proxy(asset_address)
+            let _: IgnoreValue = self
+                .liquidity_pool_proxy(asset_address)
                 .update_collateral_with_interest(dp)
-                .execute_on_dest_context_ignore_result();
+                .execute_on_dest_context();
         }
     }
 
@@ -363,9 +365,10 @@ pub trait LendingPool:
 
         for bp in borrow_positions.values() {
             let asset_address = self.get_pool_address(&bp.token_id);
-            self.liquidity_pool_proxy(asset_address)
+            let _: IgnoreValue = self
+                .liquidity_pool_proxy(asset_address)
                 .update_borrows_with_debt(bp)
-                .execute_on_dest_context_ignore_result();
+                .execute_on_dest_context();
         }
     }
 

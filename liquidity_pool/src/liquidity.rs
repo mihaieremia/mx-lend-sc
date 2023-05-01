@@ -1,5 +1,5 @@
-elrond_wasm::imports!();
-elrond_wasm::derive_imports!();
+multiversx_sc::imports!();
+multiversx_sc::derive_imports!();
 
 use common_structs::*;
 
@@ -8,7 +8,7 @@ use super::liq_storage;
 use super::liq_utils;
 use super::tokens;
 
-#[elrond_wasm::module]
+#[multiversx_sc::module]
 pub trait LiquidityModule:
     liq_storage::StorageModule
     + tokens::TokensModule
@@ -95,15 +95,6 @@ pub trait LiquidityModule:
         ret_deposit_position.round = round;
         ret_deposit_position.initial_supply_index = supply_index;
 
-        // let deposit_position = DepositPosition::new(
-        //     pool_asset,
-        //     deposit_amount.clone(),
-        //     account_nonce,
-        //     round,
-        //     supply_index,
-        // );
-        // self.deposit_position().insert(deposit_position);
-
         self.reserves().update(|x| *x += &deposit_amount);
         self.supplied_amount().update(|x| *x += deposit_amount);
         ret_deposit_position
@@ -117,18 +108,9 @@ pub trait LiquidityModule:
         initial_caller: ManagedAddress,
         borrow_amount: BigUint,
         existing_borrow_position: BorrowPosition<Self::Api>,
-        // loan_to_value: BigUint,
     ) -> BorrowPosition<Self::Api> {
         let pool_token_id = self.pool_asset().get();
-        // let collateral_amount = self.get_collateral_available(account_position);
-        // let borrowable_amount_in_dollars = self.compute_borrowable_amount(
-        //     &collateral_amount,
-        //     &loan_to_value,
-        //     pool_asset_data.decimals,
-        // );
-        // let borrowable_amount_in_tokens = (&borrowable_amount_in_dollars / &pool_asset_data.price)
-        //     * BigUint::from(10u64).pow(pool_asset_data.decimals as u32);
-        // let borrow_amount_in_tokens = cmp::min(borrowable_amount_in_tokens, amount);
+
         let asset_reserve = self.reserves().get();
         let mut ret_borrow_position = existing_borrow_position.clone();
         self.require_non_zero_address(&initial_caller);
@@ -147,8 +129,6 @@ pub trait LiquidityModule:
         ret_borrow_position.amount += &borrow_amount;
         ret_borrow_position.round = round;
         ret_borrow_position.initial_borrow_index = borrow_index;
-
-        // self.borrow_position().insert(borrow_position);
 
         self.borrowed_amount()
             .update(|total| *total += &borrow_amount);
@@ -228,7 +208,6 @@ pub trait LiquidityModule:
         );
         let amount_without_interest = &received_amount - &accumulated_debt;
 
-        // self.update_interest_indexes();
         let mut ret_borrow_position = self.update_borrows_with_debt(borrow_position);
 
         let total_owed_with_interest = ret_borrow_position.amount.clone();

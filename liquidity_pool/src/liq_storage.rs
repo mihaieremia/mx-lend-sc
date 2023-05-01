@@ -1,9 +1,9 @@
-elrond_wasm::imports!();
-elrond_wasm::derive_imports!();
+multiversx_sc::imports!();
+multiversx_sc::derive_imports!();
 
 use common_structs::PoolParams;
 
-#[elrond_wasm::module]
+#[multiversx_sc::module]
 pub trait StorageModule {
     #[view(getPoolAsset)]
     #[storage_mapper("pool_asset")]
@@ -28,22 +28,6 @@ pub trait StorageModule {
     #[view(borrowToken)]
     #[storage_mapper("borrow_token")]
     fn borrow_token(&self) -> SingleValueMapper<TokenIdentifier>;
-
-    // #[view(getDepositPosition)]
-    // #[storage_mapper("deposit_position")]
-    // fn deposit_position(&self) -> UnorderedSetMapper<DepositPosition<Self::Api>>;
-
-    // #[view(getBorrowMetadata)]
-    // #[storage_mapper("borrow_position")]
-    // fn borrow_position(&self) -> UnorderedSetMapper<BorrowPosition<Self::Api>>;
-
-    // #[view(getSuppliedPosition)]
-    // #[storage_mapper("supplied_positions")]
-    // fn supplied_positions(&self, account_nonce: u64, nonce_deposit_position: u64) -> UnorderedSetMapper<DepositPosition<M>;
-
-    // #[view(getSuppliedPosition)]
-    // #[storage_mapper("supplied_positions")]
-    // fn supplied_positions(&self, account_nonce: u64, nonce_deposit_position: u64) -> SingleValueMapper<ManagedVec(BorrowPosition<M>)<Self::Api>>;
 
     #[view(getPoolParams)]
     #[storage_mapper("pool_params")]

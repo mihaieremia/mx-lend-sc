@@ -1,6 +1,6 @@
 use constants::*;
 
-use elrond_wasm_debug::{managed_biguint, rust_biguint};
+use multiversx_sc_scenario::{managed_biguint, rust_biguint};
 use lending_pool::BP;
 use lending_pool_interaction::LendingSetup;
 use liquidity_pool::liq_storage::StorageModule;
