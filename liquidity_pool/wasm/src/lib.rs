@@ -5,12 +5,12 @@
 ////////////////////////////////////////////////////
 
 // Init:                                 1
-// Endpoints:                           28
+// Endpoints:                           31
 // Async Callback (empty):               1
-// Total number of exported functions:  30
+// Total number of exported functions:  33
 
 #![no_std]
-#![feature(alloc_error_handler, lang_items)]
+#![feature(lang_items)]
 
 multiversx_sc_wasm_adapter::allocator!();
 multiversx_sc_wasm_adapter::panic_handler!();
@@ -18,35 +18,39 @@ multiversx_sc_wasm_adapter::panic_handler!();
 multiversx_sc_wasm_adapter::endpoints! {
     liquidity_pool
     (
-        getPoolAsset
-        getReserves
-        getSuppliedAmount
-        getRewardsReserves
-        getLendToken
-        borrowToken
-        getPoolParams
-        getTotalBorrow
-        getLiquidationThreshold
-        getBorrowIndex
-        getSupplyIndex
-        borrowIndexLastUpdateRound
-        getAccountToken
-        getAccountPositions
-        updateCollateralWithInterest
-        updateBorrowsWithDebt
-        addCollateral
-        borrow
-        remove_collateral
-        repay
-        sendTokens
-        getCapitalUtilisation
-        getTotalCapital
-        getDebtInterest
-        getDepositRate
-        getBorrowRate
-        setPriceAggregatorAddress
-        getAggregatorAddress
+        init => init
+        getPoolAsset => pool_asset
+        getReserves => reserves
+        getSuppliedAmount => supplied_amount
+        getRewardsReserves => rewards_reserves
+        getLendToken => lend_token
+        borrowToken => borrow_token
+        getPoolParams => pool_params
+        getTotalBorrow => borrowed_amount
+        getLiquidationThreshold => liquidation_threshold
+        getBorrowIndex => borrow_index
+        getSupplyIndex => supply_index
+        borrowIndexLastUpdateRound => borrow_index_last_update_round
+        getAccountToken => account_token
+        getDebtNFT => debt_nft_token
+        getAccountPositions => account_positions
+        updateCollateralWithInterest => update_collateral_with_interest
+        updateBorrowsWithDebt => update_borrows_with_debt
+        addCollateral => add_collateral
+        borrow => borrow
+        borrowWithNFTs => borrow_bulk_nfts
+        remove_collateral => remove_collateral
+        repay => repay
+        repayNFTs => repay_nfts
+        sendTokens => send_tokens
+        getCapitalUtilisation => get_capital_utilisation
+        getTotalCapital => get_total_capital
+        getDebtInterest => get_debt_interest
+        getDepositRate => get_deposit_rate
+        getBorrowRate => get_borrow_rate
+        setPriceAggregatorAddress => set_price_aggregator_address
+        getAggregatorAddress => price_aggregator_address
     )
 }
 
-multiversx_sc_wasm_adapter::empty_callback! {}
+multiversx_sc_wasm_adapter::async_callback_empty! {}

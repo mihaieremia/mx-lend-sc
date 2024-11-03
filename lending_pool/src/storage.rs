@@ -1,6 +1,6 @@
 multiversx_sc::imports!();
 
-use common_structs::{BorrowPosition, DepositPosition};
+use common_structs::{BorrowPosition, CollectionParams, DepositPosition};
 
 #[multiversx_sc::module]
 pub trait LendingStorageModule {
@@ -17,4 +17,19 @@ pub trait LendingStorageModule {
         &self,
         owner_nonce: u64,
     ) -> MapMapper<TokenIdentifier, BorrowPosition<Self::Api>>;
+
+    #[view(getNFTBorrowPositions)]
+    #[storage_mapper("nft_borrow_positions")]
+    fn nft_borrow_positions(&self, nft_nonce: u64) -> SingleValueMapper<BorrowPosition<Self::Api>>;
+
+    #[view(getCollections)]
+    #[storage_mapper("collections")]
+    fn collections(&self) -> UnorderedSetMapper<TokenIdentifier>;
+
+    #[view(getCollectionParam)]
+    #[storage_mapper("collection_params")]
+    fn collection_params(
+        &self,
+        token: &TokenIdentifier,
+    ) -> SingleValueMapper<CollectionParams<Self::Api>>;
 }

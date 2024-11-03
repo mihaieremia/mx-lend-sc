@@ -41,13 +41,14 @@ pub struct DepositPosition<M: ManagedTypeApi> {
     pub initial_supply_index: BigUint<M>,
 }
 
-#[derive(NestedEncode, NestedDecode, TopEncode, TopDecode, TypeAbi, Clone)]
+#[derive(ManagedVecItem, NestedEncode, NestedDecode, TopEncode, TopDecode, TypeAbi, Clone, PartialEq, Debug)]
 pub struct BorrowPosition<M: ManagedTypeApi> {
     pub token_id: TokenIdentifier<M>,
     pub amount: BigUint<M>,
     pub owner_nonce: u64,
     pub round: u64,
     pub initial_borrow_index: BigUint<M>,
+    pub nft: Option<EsdtTokenPayment<M>>,
 }
 
 impl<M: ManagedTypeApi> TokenAmountPair<M> {
@@ -85,6 +86,7 @@ impl<M: ManagedTypeApi> BorrowPosition<M> {
         owner_nonce: u64,
         round: u64,
         initial_borrow_index: BigUint<M>,
+        nft: Option<EsdtTokenPayment<M>>,
     ) -> Self {
         BorrowPosition {
             token_id,
@@ -92,6 +94,34 @@ impl<M: ManagedTypeApi> BorrowPosition<M> {
             owner_nonce,
             round,
             initial_borrow_index,
+            nft,
+        }
+    }
+}
+
+#[derive(NestedEncode, NestedDecode, TopEncode, TopDecode, TypeAbi, Clone)]
+pub struct CollectionParams<M: ManagedTypeApi> {
+    pub token: TokenIdentifier<M>,
+    pub floor: BigUint<M>,
+    pub ltv: BigUint<M>,
+    pub max_borrow: BigUint<M>,
+    pub liquidation_threshold: BigUint<M>,
+}
+
+impl<M: ManagedTypeApi> CollectionParams<M> {
+    pub fn new(
+        token: TokenIdentifier<M>,
+        floor: BigUint<M>,
+        ltv: BigUint<M>,
+        max_borrow: BigUint<M>,
+        liquidation_threshold: BigUint<M>,
+    ) -> Self {
+        CollectionParams {
+            token,
+            floor,
+            ltv,
+            max_borrow,
+            liquidation_threshold,
         }
     }
 }

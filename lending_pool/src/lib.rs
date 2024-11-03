@@ -49,6 +49,21 @@ pub trait LendingPool:
         );
     }
 
+    #[only_owner]
+    #[payable("EGLD")]
+    #[endpoint(registerDebtNFTToken)]
+    fn register_debt_token(&self, token_name: ManagedBuffer, ticker: ManagedBuffer) {
+        let payment_amount = self.call_value().egld_value();
+        self.debt_nft_token().issue_and_set_all_roles(
+            EsdtTokenType::NonFungible,
+            payment_amount.clone_value(),
+            token_name,
+            ticker,
+            1,
+            None,
+        );
+    }
+
     #[endpoint(enterMarket)]
     fn enter_market(&self) -> EsdtTokenPayment {
         let caller = self.blockchain().get_caller();
@@ -124,7 +139,6 @@ pub trait LendingPool:
             self.call_value().single_esdt().into_tuple();
         let initial_caller = self.blockchain().get_caller();
         let pool_address = self.get_pool_address(&withdraw_token_id);
-        // let mut merged_deposits;
 
         self.require_asset_supported(&withdraw_token_id);
         self.lending_account_in_the_market(nft_account_nonce);
@@ -140,25 +154,22 @@ pub trait LendingPool:
             "Not enough tokens deposited for this account!"
         );
 
-        match self
-            .deposit_positions(nft_account_nonce)
-            .get(&withdraw_token_id)
-        {
+        let mut dep_pos_map = self.deposit_positions(nft_account_nonce);
+        match dep_pos_map.get(&withdraw_token_id) {
             Some(dp) => {
                 let deposit_position: DepositPosition<<Self as ContractBase>::Api> = self
                     .liquidity_pool_proxy(pool_address)
                     .remove_collateral(&initial_caller, amount, dp)
                     .execute_on_dest_context();
 
-                self.deposit_positions(nft_account_nonce)
-                    .remove(&withdraw_token_id);
-                if deposit_position.amount != 0 {
-                    self.deposit_positions(nft_account_nonce)
-                        .insert(withdraw_token_id, deposit_position);
+                if deposit_position.amount == 0 {
+                    dep_pos_map.remove(&withdraw_token_id);
+                } else {
+                    dep_pos_map.insert(withdraw_token_id, deposit_position);
                 }
             }
             None => panic!(
-                "Tokens {} are not available for this account",
+                "Tokens {} are not available for this account", // maybe was liquidated already
                 withdraw_token_id
             ),
         };
@@ -192,7 +203,7 @@ pub trait LendingPool:
         let collateral_in_dollars = self.get_total_collateral_in_dollars(nft_account_nonce);
         let borrowed_amount_in_dollars = self.get_total_borrow_in_dollars(nft_account_nonce);
         let amount_to_borrow_in_dollars =
-            amount.clone() * self.get_token_price_data(asset_to_borrow.clone()).price;
+            amount.clone() * self.get_token_price_data(&asset_to_borrow).price;
 
         require!(
             collateral_in_dollars * loan_to_value
@@ -210,21 +221,129 @@ pub trait LendingPool:
             .borrow(&initial_caller, amount, initial_borrow_position)
             .execute_on_dest_context();
 
-        // Update BorrowPosition
-        self.borrow_positions(nft_account_nonce)
-            .remove(&asset_to_borrow);
-        if borrow_position.amount != 0 {
+        if borrow_position.amount == 0 {
+            // Update BorrowPosition
+            self.borrow_positions(nft_account_nonce)
+                .remove(&asset_to_borrow);
+        } else {
+            // Update BorrowPosition if it's not empty
             self.borrow_positions(nft_account_nonce)
                 .insert(asset_to_borrow, borrow_position);
         }
 
-        // Return NFT to owner
+        // Return NFT account to owner
         self.send().direct_esdt(
             &initial_caller,
             &nft_account_token_id,
             nft_account_nonce,
             &nft_account_amount,
         );
+    }
+
+    #[payable("*")]
+    #[endpoint(borrowWithNFTs)]
+    fn borrow_with_nfts(
+        &self,
+        asset_to_borrow: TokenIdentifier<Self::Api>,
+        amount: BigUint<Self::Api>,
+    ) -> ManagedVec<EsdtTokenPayment<Self::Api>> {
+        let payments = self.call_value().all_esdt_transfers();
+        let initial_caller = self.blockchain().get_caller();
+        let borrow_token_pool_address = self.get_pool_address(&asset_to_borrow);
+
+        self.require_asset_supported(&asset_to_borrow);
+        self.require_amount_greater_than_zero(&amount);
+        self.require_non_zero_address(&initial_caller);
+
+        let map_collections = self.collections();
+
+        let mut payments_out: ManagedVec<EsdtTokenPayment<Self::Api>> = ManagedVec::new();
+        let borrow_amount_usd = self.get_token_price_data(&asset_to_borrow).price;
+        let amount_to_borrow_in_dollars = borrow_amount_usd * amount.clone();
+        let egld_usd_price = self.get_egld_price_data().price;
+        let mut total_collateral_nfts = BigUint::zero();
+        let mut borrow_positions: ManagedVec<BorrowPosition<Self::Api>> = ManagedVec::new();
+        let mut original_total_amount = amount.clone();
+        for payment in payments.iter() {
+            let collection_exists = map_collections.contains(&payment.token_identifier);
+            require!(collection_exists, "Collection is not allowed as collateral");
+            let collection_params = self.collection_params(&payment.token_identifier).get();
+            let max_borrow = (collection_params.floor * &payment.amount) * collection_params.ltv;
+            if max_borrow <= original_total_amount {
+                total_collateral_nfts += &max_borrow;
+                // reduce the amount to borrow with the amount borrowed from the NFT
+                original_total_amount -= &max_borrow;
+
+                // borrow the full capacity of the NFT until the amount to borrow is covered
+                borrow_positions.push(BorrowPosition::new(
+                    asset_to_borrow.clone(),
+                    max_borrow,
+                    0,
+                    self.blockchain().get_block_round(),
+                    BigUint::from(BP),
+                    Option::Some(payment),
+                ));
+            } else {
+                if original_total_amount == BigUint::zero() {
+                    // return extra NFTs to owner, because the amount to borrow is already covered
+                    payments_out.push(payment.clone());
+                } else {
+                    // borrow the rest of the amount and not the full capacity of the NFT
+                    borrow_positions.push(BorrowPosition::new(
+                        asset_to_borrow.clone(),
+                        original_total_amount,
+                        0,
+                        self.blockchain().get_block_round(),
+                        BigUint::from(BP),
+                        Option::Some(payment),
+                    ));
+
+                    total_collateral_nfts += &max_borrow;
+                    // reset the original amount to zero, because the amount to borrow is already covered
+                    original_total_amount = BigUint::zero();
+                }
+            }
+        }
+
+        require!(
+            total_collateral_nfts * egld_usd_price > amount_to_borrow_in_dollars,
+            "Not enough collateral available for this loan!"
+        );
+
+        let borrow_positions: ManagedVec<BorrowPosition<Self::Api>> = self
+            .liquidity_pool_proxy(borrow_token_pool_address)
+            .borrow_bulk_nfts(&initial_caller, amount, borrow_positions)
+            .execute_on_dest_context();
+        let sc = self.blockchain().get_sc_address();
+        let debt_token = self.debt_nft_token().get_token_id();
+        for last_position in &borrow_positions {
+            let real_nft = last_position.nft.as_ref().unwrap();
+            let nft_data = self.blockchain().get_esdt_token_data(
+                &sc,
+                &real_nft.token_identifier,
+                real_nft.token_nonce,
+            );
+
+            let nft_nonce = self.send().esdt_nft_create::<BorrowPosition<Self::Api>>(
+                &debt_token,
+                &BigUint::from(1u32),
+                &sc_format!("xDebt - {}", nft_data.name),
+                &BigUint::from(0u32),
+                &nft_data.hash,
+                &last_position,
+                &nft_data.uris,
+            );
+
+            self.nft_borrow_positions(nft_nonce).set(last_position);
+            payments_out.push(EsdtTokenPayment::new(
+                debt_token.clone(),
+                nft_nonce,
+                BigUint::from(1u32),
+            ));
+        }
+
+        self.send().direct_multi(&initial_caller, &payments_out);
+        payments_out
     }
 
     #[payable("*")]
@@ -276,6 +395,94 @@ pub trait LendingPool:
         );
     }
 
+    // Retrieve information about the repayment and the NFTs
+    fn get_repay_and_nft_info(
+        &self,
+        all_tokens: ManagedRef<ManagedVec<Self::Api, EsdtTokenPayment<Self::Api>>>,
+    ) -> (
+        TokenIdentifier<Self::Api>,
+        u64,
+        BigUint<Self::Api>,
+        ManagedVec<Self::Api, EsdtTokenPayment<Self::Api>>,
+    ) {
+        require!(
+            all_tokens.len() > 1,
+            "Minimum 2 tokens required for this operation"
+        );
+        let (repay_token_id, repay_nonce, repay_amount) = all_tokens.get(0).into_tuple();
+        let nft_tokens = all_tokens.slice(1, all_tokens.len()).unwrap();
+        (repay_token_id, repay_nonce, repay_amount, nft_tokens)
+    }
+
+    // Process the NFTs
+    fn process_nfts(
+        &self,
+        nft_tokens: &ManagedVec<Self::Api, EsdtTokenPayment<Self::Api>>,
+        repay_token_id: &TokenIdentifier<Self::Api>,
+    ) -> MultiValueEncoded<MultiValue2<EsdtTokenPayment<Self::Api>, BorrowPosition<Self::Api>>>
+    {
+        let mut vec_borrow_positions = MultiValueEncoded::new();
+        for debt_nft in nft_tokens.iter() {
+            let (debt_token, debt_nonce, _) = debt_nft.clone().into_tuple();
+            self.debt_nft_token().require_same_token(&debt_token);
+            let debt_data = self
+                .debt_nft_token()
+                .get_token_attributes::<BorrowPosition<Self::Api>>(debt_nonce);
+            require!(
+                debt_data.token_id == *repay_token_id,
+                "Repayment token must be the same as the debt token"
+            );
+            vec_borrow_positions.push(MultiValue2::from((debt_nft, debt_data)));
+        }
+        vec_borrow_positions
+    }
+
+    #[payable("*")]
+    #[endpoint(repayNFT)]
+    fn repay_nft_debt(&self) -> ManagedVec<EsdtTokenPayment<Self::Api>> {
+        let all_tokens = self.call_value().all_esdt_transfers();
+        let (repay_token_id, repay_nonce, repay_amount, nft_tokens) =
+            self.get_repay_and_nft_info(all_tokens);
+
+        let initial_caller = self.blockchain().get_caller();
+        let asset_address = self.get_pool_address(&repay_token_id);
+
+        self.require_asset_supported(&repay_token_id);
+        self.require_amount_greater_than_zero(&repay_amount);
+        self.require_non_zero_address(&initial_caller);
+
+        let vec_borrow_positions = self.process_nfts(&nft_tokens, &repay_token_id);
+
+        let processed_positions: MultiValueEncoded<
+            MultiValue2<EsdtTokenPayment<Self::Api>, BorrowPosition<Self::Api>>,
+        > = self
+            .liquidity_pool_proxy(asset_address)
+            .repay_nfts(&initial_caller, vec_borrow_positions)
+            .with_esdt_transfer((repay_token_id, repay_nonce, repay_amount))
+            .execute_on_dest_context();
+
+        let mut payments_out: ManagedVec<EsdtTokenPayment<Self::Api>> = ManagedVec::new();
+        for positions in processed_positions.into_iter() {
+            let (token, borrow_pos) = positions.into_tuple();
+            if borrow_pos.amount != 0 {
+                self.nft_borrow_positions(token.token_nonce).set(borrow_pos);
+                payments_out.push(token);
+            } else {
+                self.nft_borrow_positions(token.token_nonce).clear();
+                self.debt_nft_token()
+                    .nft_burn(token.token_nonce, &token.amount);
+                let real_nft = borrow_pos.nft.unwrap();
+                payments_out.push(EsdtTokenPayment::new(
+                    real_nft.token_identifier,
+                    real_nft.token_nonce,
+                    real_nft.amount,
+                ));
+            }
+        }
+        self.send().direct_multi(&initial_caller, &payments_out);
+        payments_out
+    }
+
     #[payable("*")]
     #[endpoint(liquidate)]
     fn liquidate(
@@ -317,7 +524,7 @@ pub trait LendingPool:
         );
         require!(health_factor < BP, "health not low enough for liquidation");
 
-        let liquidator_asset_data = self.get_token_price_data(liquidator_asset_token_id);
+        let liquidator_asset_data = self.get_token_price_data(&liquidator_asset_token_id);
         let liquidator_asset_value_in_dollars =
             liquidator_asset_amount.clone() * liquidator_asset_data.price;
 
@@ -391,6 +598,7 @@ pub trait LendingPool:
             "Account not in Lending Protocol!"
         );
     }
+
     fn lending_account_token_valid(&self, account_token_id: TokenIdentifier) {
         require!(
             account_token_id == self.account_token().get_token_id(),

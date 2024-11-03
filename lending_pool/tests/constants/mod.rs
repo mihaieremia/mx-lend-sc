@@ -19,6 +19,14 @@ pub const RESERVE_FACTOR: u64 = 100_000_000;
 pub const LIQ_THRESOLD: u64 = 700_000_000;
 pub const ACCOUNT_TOKEN: &[u8] = b"LACC-abcdef";
 pub const ACCOUNT_TICKER: &[u8] = b"LACC";
+pub const DEBT_NFT_TOKEN: &[u8] = b"XDEBT-abcdef";
+pub const APE_TOKEN: &[u8] = b"APE-abcdef";
+pub const APE_LTV: u64 = 500_000_000; // 50%
+pub const COW_TOKEN: &[u8] = b"COW-abcdef";
+pub const COW_LTV: u64 = 600_000_000; // 50%
+pub const COW_FLOOR: u64 = 10_000_000_000;
+pub const APE_FLOOR: u64 = 7_000_000_000;
+pub const MAX_BORROW: u64 = 6_000_000_000;
 pub const DECIMALS: u64 = 1_000_000_000;
 
 // lending pool constants

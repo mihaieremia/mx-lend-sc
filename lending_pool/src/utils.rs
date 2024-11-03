@@ -15,7 +15,7 @@ pub trait LendingUtilsModule:
     + storage::LendingStorageModule
     + price_aggregator_proxy::PriceAggregatorModule
 {
-    fn get_token_price_data(&self, token_id: TokenIdentifier) -> AggregatorResult<Self::Api> {
+    fn get_token_price_data(&self, token_id: &TokenIdentifier) -> AggregatorResult<Self::Api> {
         let from_ticker = self.get_token_ticker(token_id);
         let result = self
             .get_full_result_for_pair(from_ticker, ManagedBuffer::new_from_bytes(DOLLAR_TICKER));
@@ -26,8 +26,20 @@ pub trait LendingUtilsModule:
         }
     }
 
-    fn get_token_ticker(&self, token_id: TokenIdentifier) -> ManagedBuffer {
-        let as_buffer = token_id.into_managed_buffer();
+    fn get_egld_price_data(&self) -> AggregatorResult<Self::Api> {
+        let result = self.get_full_result_for_pair(
+            ManagedBuffer::new_from_bytes(EgldOrEsdtTokenIdentifier::EGLD_REPRESENTATION),
+            ManagedBuffer::new_from_bytes(DOLLAR_TICKER),
+        );
+
+        match result {
+            Some(r) => r,
+            None => sc_panic!("failed to get token price"),
+        }
+    }
+
+    fn get_token_ticker(&self, token_id: &TokenIdentifier) -> ManagedBuffer {
+        let as_buffer = token_id.clone().into_managed_buffer();
         let ticker_start_index = 0;
         let ticker_end_index = as_buffer.len() - TOKEN_ID_SUFFIX_LEN;
 
@@ -73,6 +85,7 @@ pub trait LendingUtilsModule:
                 account_position,
                 self.blockchain().get_block_round(),
                 BigUint::from(BP),
+                Option::None,
             ),
         }
     }
@@ -97,7 +110,7 @@ pub trait LendingUtilsModule:
         let deposit_positions = self.deposit_positions(account_position);
 
         for dp in deposit_positions.values() {
-            let dp_data = self.get_token_price_data(dp.token_id);
+            let dp_data = self.get_token_price_data(&dp.token_id);
             deposited_amount_in_dollars += dp.amount * dp_data.price;
         }
 
@@ -110,7 +123,7 @@ pub trait LendingUtilsModule:
         let borrow_positions = self.borrow_positions(account_position);
 
         for bp in borrow_positions.values() {
-            let bp_data = self.get_token_price_data(bp.token_id);
+            let bp_data = self.get_token_price_data(&bp.token_id);
             total_borrow_in_dollars += bp.amount * bp_data.price;
         }
 
@@ -129,7 +142,7 @@ pub trait LendingUtilsModule:
             "Liquidatee user doesn't have this token as collateral"
         );
 
-        let token_data = self.get_token_price_data(token_to_liquidate);
+        let token_data = self.get_token_price_data(&token_to_liquidate);
         (&amount_to_return_to_liquidator_in_dollars * BP / &token_data.price)
             * BigUint::from(10u64).pow(token_data.decimals as u32)
             / BP

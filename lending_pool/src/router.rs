@@ -3,14 +3,20 @@
 multiversx_sc::imports!();
 multiversx_sc::derive_imports!();
 
+use crate::storage;
+
 use super::factory;
 use super::proxy;
+use common_structs::CollectionParams;
 
 use price_aggregator_proxy::ProxyTrait as _;
 
 #[multiversx_sc::module]
 pub trait RouterModule:
-    proxy::ProxyModule + factory::FactoryModule + common_checks::ChecksModule
+    proxy::ProxyModule
+    + factory::FactoryModule
+    + common_checks::ChecksModule
+    + storage::LendingStorageModule
 {
     #[only_owner]
     #[endpoint(createLiquidityPool)]
@@ -101,6 +107,13 @@ pub trait RouterModule:
     #[endpoint(setAssetLiquidationBonus)]
     fn set_asset_liquidation_bonus(&self, asset: TokenIdentifier, liq_bonus: BigUint) {
         self.asset_liquidation_bonus(&asset).set(&liq_bonus);
+    }
+
+    #[only_owner]
+    #[endpoint(addCollection)]
+    fn add_collection(&self, params: &CollectionParams<Self::Api>) {
+        self.collections().insert(params.token.clone());
+        self.collection_params(&params.token).set(params);
     }
 
     #[view(getPoolAddress)]

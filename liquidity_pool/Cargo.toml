@@ -7,8 +7,9 @@ publish = false
 
 [lib]
 path = "src/lib.rs"
+
 [dependencies.multiversx-sc]
-version = "0.40.1"
+version = "0.42.0"
 
 [dependencies.common-structs]
 path = "../common/structs"
@@ -21,5 +22,6 @@ path = "../common/tokens"
 
 [dependencies.price-aggregator-proxy]
 path = "../common/price-aggregator-proxy"
+
 [dev-dependencies.multiversx-sc-scenario]
-version = "0.40.1"
+version = "0.42.0"

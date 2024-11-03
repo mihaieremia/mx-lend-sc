@@ -4,8 +4,9 @@ version = "0.0.0"
 authors = ["you"]
 edition = "2018"
 publish = false
+
 [dependencies.liquidity-pool]
 path = ".."
 
 [dependencies.multiversx-sc-meta]
-version = "0.40.1"
+version = "0.42.0"

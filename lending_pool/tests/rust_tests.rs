@@ -1,9 +1,10 @@
 use constants::*;
 
-use multiversx_sc_scenario::{managed_biguint, rust_biguint};
 use lending_pool::BP;
 use lending_pool_interaction::LendingSetup;
 use liquidity_pool::liq_storage::StorageModule;
+use multiversx_sc::codec::Empty;
+use multiversx_sc_scenario::{managed_biguint, rust_biguint, DebugApi};
 
 pub mod constants;
 pub mod lending_pool_interaction;
@@ -116,6 +117,33 @@ fn borrow_test() {
         1,
         1_000_000_000,
     );
+}
+
+#[test]
+fn borrow_with_nft_test() {
+    let _ = DebugApi::dummy();
+    let mut lending_setup = LendingSetup::deploy_lending(
+        lending_pool::contract_obj,
+        liquidity_pool::contract_obj,
+        aggregator_mock::contract_obj,
+    );
+    let user_addr = lending_setup.first_user_addr.clone();
+
+    let lender_addr = lending_setup.second_user_addr.clone();
+    let account_nonce = lending_setup.enter_market(&lender_addr);
+
+    lending_setup
+        .b_mock
+        .set_esdt_balance(&lender_addr, EGLD_TOKEN_ID, &rust_biguint!(1_000));
+
+    lending_setup.add_collateral(&lender_addr, EGLD_TOKEN_ID, 0, account_nonce, 1_000, 1_000);
+
+    lending_setup
+        .b_mock
+        .set_nft_balance(&user_addr, APE_TOKEN, 1, &rust_biguint!(1), &Empty {});
+
+    lending_setup.add_collections();
+    lending_setup.borrow_with_nft(&user_addr, EGLD_TOKEN_ID, 250, 750, 250, 1, 1_000_000_000);
 }
 
 #[test]

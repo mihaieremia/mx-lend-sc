@@ -1,3 +1,12 @@
+use common_structs::CollectionParams;
+use lending_pool::{
+    router::RouterModule, storage::LendingStorageModule, AccountTokenModule, BorrowPosition,
+    DepositPosition, LendingPool, BP,
+};
+use liquidity_pool::LiquidityPool;
+use liquidity_pool::{liq_storage::StorageModule, liquidity::LiquidityModule};
+use multiversx_sc::storage::mappers::StorageTokenWrapper;
+use multiversx_sc::types::{EsdtTokenPayment, ManagedVec};
 use multiversx_sc::{
     codec::Empty,
     types::{Address, BigUint, EsdtLocalRole},
@@ -7,14 +16,11 @@ use multiversx_sc_scenario::{
     whitebox::{BlockchainStateWrapper, ContractObjWrapper},
     DebugApi,
 };
-use lending_pool::{
-    router::RouterModule, storage::LendingStorageModule, AccountTokenModule, BorrowPosition,
-    DepositPosition, LendingPool, BP,
-};
-use liquidity_pool::LiquidityPool;
-use liquidity_pool::{liq_storage::StorageModule, liquidity::LiquidityModule};
 use price_aggregator_proxy::PriceAggregatorModule;
 
+use crate::constants::{
+    APE_FLOOR, APE_LTV, APE_TOKEN, COW_FLOOR, COW_LTV, COW_TOKEN, DEBT_NFT_TOKEN, MAX_BORROW,
+};
 use crate::{
     constants::{
         ACCOUNT_TOKEN, EGLD_TOKEN_ID, LIQ_THRESOLD, RESERVE_FACTOR, R_BASE, R_SLOPE1, R_SLOPE2,
@@ -118,6 +124,8 @@ where
                         managed_token_id!(USDC_TOKEN_ID),
                         managed_address!(&liquidity_pool_usdc_wrapper.address_ref()),
                     );
+                    sc.debt_nft_token()
+                        .set_if_empty(managed_token_id!(DEBT_NFT_TOKEN));
                     sc.pools_allowed()
                         .insert(managed_address!(&liquidity_pool_usdc_wrapper.address_ref()));
                     sc.set_asset_liquidation_bonus(
@@ -188,6 +196,15 @@ where
             ],
         );
 
+        b_mock.set_esdt_local_roles(
+            lending_pool_wrapper.address_ref(),
+            DEBT_NFT_TOKEN,
+            &[
+                EsdtLocalRole::NftCreate,
+                EsdtLocalRole::NftAddQuantity,
+                EsdtLocalRole::NftBurn,
+            ],
+        );
         Self {
             owner_addr,
             first_user_addr,
@@ -223,6 +240,32 @@ where
             .assert_ok();
 
         account_nonce
+    }
+
+    pub fn add_collections(&mut self) {
+        self.b_mock
+            .execute_tx(
+                &self.owner_addr,
+                &self.lending_pool_wrapper,
+                &rust_biguint!(0),
+                |sc| {
+                    sc.add_collection(&CollectionParams {
+                        token: managed_token_id!(APE_TOKEN),
+                        floor: managed_biguint!(APE_FLOOR),
+                        ltv: managed_biguint!(APE_LTV),
+                        max_borrow: managed_biguint!(MAX_BORROW),
+                        liquidation_threshold: managed_biguint!(LIQ_THRESOLD),
+                    });
+                    sc.add_collection(&CollectionParams {
+                        token: managed_token_id!(COW_TOKEN),
+                        floor: managed_biguint!(COW_FLOOR),
+                        ltv: managed_biguint!(COW_LTV),
+                        max_borrow: managed_biguint!(MAX_BORROW),
+                        liquidation_threshold: managed_biguint!(LIQ_THRESOLD),
+                    });
+                },
+            )
+            .assert_ok();
     }
 
     pub fn exit_market(&mut self, user_addr: &Address, account_nonce: u64) {
@@ -381,11 +424,95 @@ where
                             owner_nonce,
                             round,
                             managed_biguint!(initial_borrow_index),
+                            Option::None,
                         ),
                     );
                 },
             )
             .assert_ok();
+
+        self.b_mock
+            .execute_query(&liquidity_pool_wrapper, |sc| {
+                let actual_deposited_collateral = sc.reserves().get();
+                let expected_collateral = multiversx_sc::types::BigUint::from_bytes_be(
+                    &expected_reserves_after_borrow.to_be_bytes(),
+                );
+                assert_eq!(
+                    actual_deposited_collateral, expected_collateral,
+                    "Reserve tokens in Liquidity Pool doesn't match!"
+                );
+            })
+            .assert_ok();
+
+        self.b_mock
+            .execute_query(&liquidity_pool_wrapper, |sc| {
+                let actual_borrowed_amount = sc.borrowed_amount().get();
+                let expected_borrowed = multiversx_sc::types::BigUint::from_bytes_be(
+                    &expected_borrowed_amount_after_borrow.to_be_bytes(),
+                );
+                assert_eq!(
+                    actual_borrowed_amount, expected_borrowed,
+                    "Borrowed amount in Liquidity Pool doesn't match!"
+                );
+            })
+            .assert_ok();
+    }
+
+    pub fn borrow_with_nft(
+        &mut self,
+        user_addr: &Address,
+        token_id: &[u8],
+        borrow_amount: u64,
+        expected_reserves_after_borrow: u64,
+        expected_borrowed_amount_after_borrow: u64,
+        round: u64,
+        initial_borrow_index: u64,
+    ) {
+        let liquidity_pool_wrapper = match token_id {
+            USDC_TOKEN_ID => &self.liquidity_pool_usdc_wrapper,
+            EGLD_TOKEN_ID => &self.liquidity_pool_egld_wrapper,
+            _ => todo!(),
+        };
+
+        self.b_mock.set_block_round(round);
+        self.b_mock
+            .execute_esdt_transfer(
+                &user_addr,
+                &self.lending_pool_wrapper,
+                APE_TOKEN,
+                1,
+                &rust_biguint!(1),
+                |sc| {
+                    let positions = sc.borrow_with_nfts(
+                        managed_token_id!(token_id),
+                        managed_biguint!(borrow_amount),
+                    );
+                    assert_eq!(positions.len(), 1);
+                    assert_eq!(positions.get(0).token_nonce, 1);
+                    let position = sc.nft_borrow_positions(1u64).get();
+                    print!("{:?}", position);
+                },
+            )
+            .assert_ok();
+
+        self.b_mock.check_nft_balance::<BorrowPosition<DebugApi>>(
+            user_addr,
+            DEBT_NFT_TOKEN,
+            1,
+            &rust_biguint!(1),
+            Some(&BorrowPosition {
+                token_id: managed_token_id!(token_id),
+                amount: managed_biguint!(borrow_amount),
+                owner_nonce: 0,
+                round: round,
+                initial_borrow_index: managed_biguint!(initial_borrow_index),
+                nft: Option::Some(EsdtTokenPayment {
+                    token_identifier: managed_token_id!(APE_TOKEN),
+                    token_nonce: 1,
+                    amount: managed_biguint!(1),
+                }),
+            }),
+        );
 
         self.b_mock
             .execute_query(&liquidity_pool_wrapper, |sc| {
@@ -448,6 +575,7 @@ where
                             owner_nonce,
                             round,
                             managed_biguint!(borrow_index),
+                            Option::None,
                         ),
                     );
                 },
@@ -525,6 +653,7 @@ where
                             liquidatee_nonce,
                             2,
                             BigUint::from(BP),
+                            Option::None,
                         ),
                     );
 
